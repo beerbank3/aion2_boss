@@ -4,38 +4,58 @@ st.set_page_config(page_title="아이온2 필보 정산기", page_icon="💎", l
 
 BOSS_LIST = ["노블루드", "카루카", "구루타", "쉬바나", "기타"]
 
-# ── session_state 초기화 ────────────────────────────────────
-def init_item(name=""):
-    return {"name": name, "price": 0, "fail_open": False, "fails": []}
-
+# ── 초기화 ─────────────────────────────────────────────────
 if "items" not in st.session_state:
     st.session_state["items"] = []
+if "uid_counter" not in st.session_state:
+    st.session_state["uid_counter"] = 0
 
-# ── 버튼 이벤트 선처리 (렌더링 전) ────────────────────────
 
-# 보스 버튼으로 아이템 추가
+def new_uid():
+    st.session_state["uid_counter"] += 1
+    return st.session_state["uid_counter"]
+
+
+def init_item(name=""):
+    return {
+        "uid": new_uid(),
+        "name": name,
+        "price": 0,
+        "fail_open": False,
+        "fails": [],          # [{"fuid": int, "price": int}, ...]
+    }
+
+
+def new_fail():
+    return {"fuid": new_uid(), "price": 0}
+
+
+# ── 이벤트 선처리 ──────────────────────────────────────────
+# 보스 버튼 → 아이템 추가
 for boss in BOSS_LIST:
-    if st.session_state.get(f"_add_boss_{boss}"):
+    if st.session_state.pop(f"_add_boss_{boss}", False):
         st.session_state["items"].append(init_item(boss))
         st.rerun()
 
 # 아이템 삭제
-for i in range(len(st.session_state["items"])):
-    if st.session_state.get(f"_del_item_{i}"):
-        st.session_state["items"].pop(i)
+for item in list(st.session_state["items"]):
+    if st.session_state.pop(f"_del_item_{item['uid']}", False):
+        st.session_state["items"] = [
+            it for it in st.session_state["items"] if it["uid"] != item["uid"]
+        ]
         st.rerun()
 
 # 미판매 항목 추가
-for i in range(len(st.session_state["items"])):
-    if st.session_state.get(f"_add_fail_{i}"):
-        st.session_state["items"][i]["fails"].append(0)
+for item in st.session_state["items"]:
+    if st.session_state.pop(f"_add_fail_{item['uid']}", False):
+        item["fails"].append(new_fail())
         st.rerun()
 
 # 미판매 항목 삭제
-for i in range(len(st.session_state["items"])):
-    for j in range(len(st.session_state["items"][i]["fails"])):
-        if st.session_state.get(f"_del_fail_{i}_{j}"):
-            st.session_state["items"][i]["fails"].pop(j)
+for item in st.session_state["items"]:
+    for f in list(item["fails"]):
+        if st.session_state.pop(f"_del_fail_{item['uid']}_{f['fuid']}", False):
+            item["fails"] = [x for x in item["fails"] if x["fuid"] != f["fuid"]]
             st.rerun()
 
 
@@ -60,33 +80,32 @@ with left:
         with boss_cols[idx]:
             st.button(boss, key=f"_add_boss_{boss}", use_container_width=True)
 
-    items_now = st.session_state["items"]
-    n_items = len(items_now)
+    items = st.session_state["items"]
 
-    if n_items == 0:
+    if not items:
         st.markdown(
             "<div style='text-align:center;padding:2rem 0;"
-            "color:rgba(100,100,100,.5);font-size:13px'>"
+            "color:rgba(120,120,120,.5);font-size:13px'>"
             "위 버튼을 눌러 아이템을 추가하세요</div>",
             unsafe_allow_html=True,
         )
     else:
-        for i in range(n_items):
-            item = items_now[i]
+        for idx, item in enumerate(items):
+            uid = item["uid"]
 
             with st.container(border=True):
                 # 아이템명 + 삭제
                 c_name, c_del = st.columns([0.85, 0.15])
                 with c_name:
                     item["name"] = st.text_input(
-                        f"아이템명",
+                        "아이템명",
                         value=item["name"],
                         placeholder="아이템 이름",
-                        key=f"name_{i}",
+                        key=f"name_{uid}",
                         label_visibility="collapsed",
                     )
                 with c_del:
-                    st.button("✕", key=f"_del_item_{i}", use_container_width=True)
+                    st.button("✕", key=f"_del_item_{uid}", use_container_width=True)
 
                 # 판매가
                 item["price"] = st.number_input(
@@ -95,11 +114,11 @@ with left:
                     value=item["price"],
                     step=10000,
                     format="%d",
-                    key=f"price_{i}",
+                    key=f"price_{uid}",
                 )
 
-                # ── 미판매 등록금 토글 ──────────────────────
-                fail_total = sum(item["fails"]) if item["fails"] else 0
+                # 미판매 등록금 토글
+                fail_total = sum(f["price"] for f in item["fails"])
                 n_fails = len(item["fails"])
 
                 toggle_label = "미판매 등록금"
@@ -109,12 +128,13 @@ with left:
                 item["fail_open"] = st.toggle(
                     toggle_label,
                     value=item["fail_open"],
-                    key=f"fail_toggle_{i}",
+                    key=f"fail_toggle_{uid}",
                 )
 
                 if item["fail_open"]:
-                    if n_fails == 0:
-                        item["fails"].append(0)
+                    # 처음 열면 항목 1개 자동 추가
+                    if not item["fails"]:
+                        item["fails"].append(new_fail())
                         st.rerun()
 
                     st.markdown(
@@ -124,7 +144,8 @@ with left:
                         unsafe_allow_html=True,
                     )
 
-                    for j in range(len(item["fails"])):
+                    for j, f in enumerate(item["fails"]):
+                        fuid = f["fuid"]
                         fc1, fc2, fc3 = st.columns([0.18, 0.64, 0.18])
                         with fc1:
                             st.markdown(
@@ -136,30 +157,34 @@ with left:
                             new_val = st.number_input(
                                 "등록가",
                                 min_value=0,
-                                value=item["fails"][j],
+                                value=f["price"],
                                 step=10000,
                                 format="%d",
-                                key=f"fail_{i}_{j}",
+                                key=f"fail_{uid}_{fuid}",
                                 label_visibility="collapsed",
                             )
-                            item["fails"][j] = new_val
+                            f["price"] = new_val
                             if new_val > 0:
                                 st.caption(f"차감 –{int(new_val * 0.02):,}원")
                         with fc3:
                             if len(item["fails"]) > 1:
-                                st.button("✕", key=f"_del_fail_{i}_{j}", use_container_width=True)
+                                st.button(
+                                    "✕",
+                                    key=f"_del_fail_{uid}_{fuid}",
+                                    use_container_width=True,
+                                )
 
-                    st.button("+ 재등록 추가", key=f"_add_fail_{i}")
+                    st.button("+ 재등록 추가", key=f"_add_fail_{uid}")
 
-                    cur_total = sum(item["fails"])
+                    cur_total = sum(f["price"] for f in item["fails"])
                     if cur_total > 0:
                         st.markdown(
                             f"<div style='border-top:0.5px solid rgba(162,45,45,.25);"
                             f"margin-top:8px;padding-top:6px;"
                             f"display:flex;justify-content:space-between;align-items:center'>"
                             f"<span style='font-size:11px;color:#A32D2D'>차감 합계 ×2%</span>"
-                            f"<b style='font-size:12px;color:#A32D2D'>–{int(cur_total * 0.02):,}원</b>"
-                            f"</div>",
+                            f"<b style='font-size:12px;color:#A32D2D'>"
+                            f"–{int(cur_total * 0.02):,}원</b></div>",
                             unsafe_allow_html=True,
                         )
 
@@ -167,13 +192,13 @@ with left:
 
 
 # ── 계산 ───────────────────────────────────────────────────
-items_now = st.session_state["items"]
+items = st.session_state["items"]
 
-total_sales = sum(it["price"] for it in items_now)
+total_sales = sum(it["price"] for it in items)
 
 total_fail_deduct = sum(
-    sum(it["fails"]) * 0.02
-    for it in items_now
+    sum(f["price"] for f in it["fails"]) * 0.02
+    for it in items
     if it["fail_open"] and it["fails"]
 )
 
@@ -191,12 +216,12 @@ def detail_row(label, value, red=False):
     with cl:
         st.caption(label)
     with cr:
-        color = "#A32D2D" if red else "inherit"
         st.markdown(
-            f"<p style='text-align:right;font-size:13px;"
-            f"font-weight:600;color:{color};margin:0'>{value}</p>",
+            f"<p style='text-align:right;font-size:13px;font-weight:600;"
+            f"color:{'#A32D2D' if red else 'inherit'};margin:0'>{value}</p>",
             unsafe_allow_html=True,
         )
+
 
 with right:
     st.subheader("정산 결과")
@@ -219,7 +244,7 @@ with right:
 
     named = [
         f"{it['name']} {it['price']:,}원"
-        for it in items_now
+        for it in items
         if it["name"] and it["price"] > 0
     ]
     if named:
