@@ -2,21 +2,22 @@ import streamlit as st
 
 st.set_page_config(page_title="아이온2 필보 정산기", page_icon="💎", layout="wide")
 
+BOSS_LIST = ["노블루드", "카루카", "구루타", "쉬바나", "기타"]
+
 # ── session_state 초기화 ────────────────────────────────────
-def init_item(name="", price=0):
-    return {"name": name, "price": price, "fail_open": False, "fails": []}
+def init_item(name=""):
+    return {"name": name, "price": 0, "fail_open": False, "fails": []}
 
 if "items" not in st.session_state:
-    st.session_state["items"] = [
-        init_item("필보", 7500000),
-        init_item("필보", 7500000),
-    ]
+    st.session_state["items"] = []
 
-# ── 버튼 이벤트 처리 (렌더링 전 선처리) ───────────────────
-# 아이템 추가
-if st.session_state.get("_add_item"):
-    st.session_state["items"].append(init_item())
-    st.rerun()
+# ── 버튼 이벤트 선처리 (렌더링 전) ────────────────────────
+
+# 보스 버튼으로 아이템 추가
+for boss in BOSS_LIST:
+    if st.session_state.get(f"_add_boss_{boss}"):
+        st.session_state["items"].append(init_item(boss))
+        st.rerun()
 
 # 아이템 삭제
 for i in range(len(st.session_state["items"])):
@@ -37,121 +38,132 @@ for i in range(len(st.session_state["items"])):
             st.session_state["items"][i]["fails"].pop(j)
             st.rerun()
 
+
 # ── 헤더 ───────────────────────────────────────────────────
 st.title("💎 아이온2 필보 정산기")
 st.caption("거래소 80% 정산 · 등록비 2% · 수수료 10% 모두 반영")
 
-# ── 총 인원 (최상단) ────────────────────────────────────────
 k = st.number_input("총 인원 (판매자 포함)", min_value=1, value=6, step=1, key="members")
 
 st.divider()
 
 left, right = st.columns(2, gap="large")
 
-# ── 왼쪽: 판매 아이템 ──────────────────────────────────────
+# ── 왼쪽 ───────────────────────────────────────────────────
 with left:
     st.subheader("판매 아이템")
 
-    n_items = len(st.session_state["items"])
+    # 보스 추가 버튼
+    st.caption("보스를 선택해 아이템 추가")
+    boss_cols = st.columns(len(BOSS_LIST))
+    for idx, boss in enumerate(BOSS_LIST):
+        with boss_cols[idx]:
+            st.button(boss, key=f"_add_boss_{boss}", use_container_width=True)
 
-    for i in range(n_items):
-        item = st.session_state["items"][i]
+    items_now = st.session_state["items"]
+    n_items = len(items_now)
 
-        with st.container(border=True):
-            # 아이템명 + 삭제
-            c_name, c_del = st.columns([0.85, 0.15])
-            with c_name:
-                item["name"] = st.text_input(
-                    f"아이템 {i+1} 이름",
-                    value=item["name"],
-                    placeholder="아이템 이름",
-                    key=f"name_{i}",
-                    label_visibility="collapsed",
-                )
-            with c_del:
-                if n_items > 1:
+    if n_items == 0:
+        st.markdown(
+            "<div style='text-align:center;padding:2rem 0;"
+            "color:rgba(100,100,100,.5);font-size:13px'>"
+            "위 버튼을 눌러 아이템을 추가하세요</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        for i in range(n_items):
+            item = items_now[i]
+
+            with st.container(border=True):
+                # 아이템명 + 삭제
+                c_name, c_del = st.columns([0.85, 0.15])
+                with c_name:
+                    item["name"] = st.text_input(
+                        f"아이템명",
+                        value=item["name"],
+                        placeholder="아이템 이름",
+                        key=f"name_{i}",
+                        label_visibility="collapsed",
+                    )
+                with c_del:
                     st.button("✕", key=f"_del_item_{i}", use_container_width=True)
 
-            # 판매가
-            item["price"] = st.number_input(
-                "판매가 (원)",
-                min_value=0,
-                value=item["price"],
-                step=10000,
-                format="%d",
-                key=f"price_{i}",
-            )
-
-            # ── 미판매 등록금 토글 ──────────────────────────
-            fails = item["fails"]
-            fail_total = sum(fails)
-            n_fails = len(fails)
-
-            toggle_label = "미판매 등록금"
-            if not item["fail_open"] and n_fails > 0 and fail_total > 0:
-                toggle_label += f" · {n_fails}건  –{int(fail_total * 0.02):,}원"
-
-            item["fail_open"] = st.toggle(
-                toggle_label,
-                value=item["fail_open"],
-                key=f"fail_toggle_{i}",
-            )
-
-            if item["fail_open"]:
-                # 처음 열면 항목 1개 자동 추가
-                if n_fails == 0:
-                    item["fails"].append(0)
-                    st.rerun()
-
-                st.markdown(
-                    "<div style='background:rgba(162,45,45,.05);"
-                    "border:0.5px solid rgba(162,45,45,.2);"
-                    "border-radius:8px;padding:8px 10px;margin-top:4px'>",
-                    unsafe_allow_html=True,
+                # 판매가
+                item["price"] = st.number_input(
+                    "판매가 (원)",
+                    min_value=0,
+                    value=item["price"],
+                    step=10000,
+                    format="%d",
+                    key=f"price_{i}",
                 )
 
-                for j in range(len(item["fails"])):
-                    fc1, fc2, fc3 = st.columns([0.18, 0.64, 0.18])
-                    with fc1:
-                        st.markdown(
-                            f"<p style='font-size:12px;color:#A32D2D;"
-                            f"padding-top:8px;margin:0'>{j+1}회차</p>",
-                            unsafe_allow_html=True,
-                        )
-                    with fc2:
-                        new_val = st.number_input(
-                            "등록가",
-                            min_value=0,
-                            value=item["fails"][j],
-                            step=10000,
-                            format="%d",
-                            key=f"fail_{i}_{j}",
-                            label_visibility="collapsed",
-                        )
-                        item["fails"][j] = new_val
-                        if new_val > 0:
-                            st.caption(f"차감 –{int(new_val * 0.02):,}원")
-                    with fc3:
-                        if len(item["fails"]) > 1:
-                            st.button("✕", key=f"_del_fail_{i}_{j}", use_container_width=True)
+                # ── 미판매 등록금 토글 ──────────────────────
+                fail_total = sum(item["fails"]) if item["fails"] else 0
+                n_fails = len(item["fails"])
 
-                st.button("+ 재등록 추가", key=f"_add_fail_{i}")
+                toggle_label = "미판매 등록금"
+                if not item["fail_open"] and n_fails > 0 and fail_total > 0:
+                    toggle_label += f" · {n_fails}건  –{int(fail_total * 0.02):,}원"
 
-                cur_total = sum(item["fails"])
-                if cur_total > 0:
+                item["fail_open"] = st.toggle(
+                    toggle_label,
+                    value=item["fail_open"],
+                    key=f"fail_toggle_{i}",
+                )
+
+                if item["fail_open"]:
+                    if n_fails == 0:
+                        item["fails"].append(0)
+                        st.rerun()
+
                     st.markdown(
-                        f"<div style='border-top:0.5px solid rgba(162,45,45,.25);"
-                        f"margin-top:8px;padding-top:6px;"
-                        f"display:flex;justify-content:space-between;align-items:center'>"
-                        f"<span style='font-size:11px;color:#A32D2D'>차감 합계 ×2%</span>"
-                        f"<b style='font-size:12px;color:#A32D2D'>–{int(cur_total * 0.02):,}원</b>"
-                        f"</div>",
+                        "<div style='background:rgba(162,45,45,.05);"
+                        "border:0.5px solid rgba(162,45,45,.2);"
+                        "border-radius:8px;padding:8px 10px;margin-top:4px'>",
                         unsafe_allow_html=True,
                     )
 
-                st.markdown("</div>", unsafe_allow_html=True)
+                    for j in range(len(item["fails"])):
+                        fc1, fc2, fc3 = st.columns([0.18, 0.64, 0.18])
+                        with fc1:
+                            st.markdown(
+                                f"<p style='font-size:12px;color:#A32D2D;"
+                                f"padding-top:8px;margin:0'>{j+1}회차</p>",
+                                unsafe_allow_html=True,
+                            )
+                        with fc2:
+                            new_val = st.number_input(
+                                "등록가",
+                                min_value=0,
+                                value=item["fails"][j],
+                                step=10000,
+                                format="%d",
+                                key=f"fail_{i}_{j}",
+                                label_visibility="collapsed",
+                            )
+                            item["fails"][j] = new_val
+                            if new_val > 0:
+                                st.caption(f"차감 –{int(new_val * 0.02):,}원")
+                        with fc3:
+                            if len(item["fails"]) > 1:
+                                st.button("✕", key=f"_del_fail_{i}_{j}", use_container_width=True)
 
-    st.button("＋ 아이템 추가", key="_add_item", use_container_width=True)
+                    st.button("+ 재등록 추가", key=f"_add_fail_{i}")
+
+                    cur_total = sum(item["fails"])
+                    if cur_total > 0:
+                        st.markdown(
+                            f"<div style='border-top:0.5px solid rgba(162,45,45,.25);"
+                            f"margin-top:8px;padding-top:6px;"
+                            f"display:flex;justify-content:space-between;align-items:center'>"
+                            f"<span style='font-size:11px;color:#A32D2D'>차감 합계 ×2%</span>"
+                            f"<b style='font-size:12px;color:#A32D2D'>–{int(cur_total * 0.02):,}원</b>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+
+                    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ── 계산 ───────────────────────────────────────────────────
