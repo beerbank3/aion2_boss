@@ -13,7 +13,7 @@ def to_int(s: str) -> int:
         return 0
 
 def fmt(n) -> str:
-    return f"{int(n):,}"
+    return f"{int(n):,}" if n else ""
 
 # ── 초기화 ─────────────────────────────────────────────────
 if "items" not in st.session_state:
@@ -30,6 +30,35 @@ def init_item(name: str = "") -> dict:
 
 def new_fail() -> dict:
     return {"fuid": new_uid(), "price": 0}
+
+
+# ── 콤마 포맷 입력 헬퍼 ────────────────────────────────────
+def fmt_input(label: str, widget_key: str, stored_value: int, placeholder: str = "0"):
+    """
+    text_input을 감싸서 콤마 포맷을 처리.
+    - 최초 렌더 시 session_state 키가 없으면 포맷된 값으로 초기화
+    - on_change 콜백으로 입력 완료 시 재포맷
+    - 현재 세션 값(정수)을 반환
+    """
+    # 최초 렌더 시에만 포맷된 값으로 초기화
+    if widget_key not in st.session_state:
+        st.session_state[widget_key] = fmt(stored_value)
+
+    def _reformat():
+        raw = st.session_state[widget_key]
+        val = to_int(raw)
+        st.session_state[widget_key] = fmt(val)
+
+    st.text_input(
+        label,
+        key=widget_key,
+        placeholder=placeholder,
+        label_visibility="collapsed",
+        on_change=_reformat,
+    )
+
+    return to_int(st.session_state[widget_key])
+
 
 # ── 이벤트 선처리 ──────────────────────────────────────────
 for boss in BOSS_LIST:
@@ -101,14 +130,14 @@ with left:
                 with c_del:
                     st.button("✕", key=f"_del_item_{uid}", use_container_width=True)
 
-                # 판매가 (text_input + 콤마 포맷)
-                price_raw = st.text_input(
-                    "판매가 (원)",
-                    value=fmt(item["price"]) if item["price"] else "",
-                    placeholder="판매가 입력 (예: 7,500,000)",
-                    key=f"price_{uid}",
+                # 판매가 (콤마 포맷)
+                st.caption("판매가 (원)")
+                item["price"] = fmt_input(
+                    "판매가",
+                    widget_key=f"price_{uid}",
+                    stored_value=item["price"],
+                    placeholder="예: 7,500,000",
                 )
-                item["price"] = to_int(price_raw)
 
                 # ── 미판매 등록금 토글 ──────────────────────
                 fail_total = sum(f["price"] for f in item["fails"])
@@ -131,8 +160,8 @@ with left:
 
                     for j, f in enumerate(item["fails"]):
                         fuid = f["fuid"]
-
                         col_label, col_input, col_del = st.columns([0.15, 0.70, 0.15])
+
                         with col_label:
                             st.markdown(
                                 f"<p style='font-size:12px;color:#c0514a;"
@@ -140,14 +169,12 @@ with left:
                                 unsafe_allow_html=True,
                             )
                         with col_input:
-                            raw = st.text_input(
+                            f["price"] = fmt_input(
                                 f"등록가 {j+1}회차",
-                                value=fmt(f["price"]) if f["price"] else "",
-                                placeholder="등록가 입력",
-                                key=f"fail_{uid}_{fuid}",
-                                label_visibility="collapsed",
+                                widget_key=f"fail_{uid}_{fuid}",
+                                stored_value=f["price"],
+                                placeholder="등록가",
                             )
-                            f["price"] = to_int(raw)
                         with col_del:
                             if len(item["fails"]) > 1:
                                 st.button(
